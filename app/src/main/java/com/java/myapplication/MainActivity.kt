@@ -176,32 +176,248 @@ val monthIncome = remember(monthAccounts) { monthAccounts.filter { it.type == TY
 val monthExpense = remember(monthAccounts) { monthAccounts.filter { it.type == TYPE_EXPENSE }.sumOf { it.amount } }
 val todayExpense = remember(accounts, today) { accounts.filter { it.dateTime.startsWith(today) && it.type == TYPE_EXPENSE }.sumOf { it.amount } }
 val salarySummary = remember(work, settings, adjustments, salaryPeriod) { calculateSalary(work, settings, adjustments, salaryPeriod) }
-val combinedIncome = totalIncome + salarySummary.netSalary
-val combinedBalance = combinedIncome - totalExpense
 val combinedMonthIncome = monthIncome + salarySummary.netSalary
 val combinedMonthBalance = combinedMonthIncome - monthExpense
+val todayHours = todayWork.sumOf { it.hours }
+val todayWage = todayWork.sumOf { it.wage }
 LazyColumn(modifier.fillMaxSize(), state = rememberLazyListState(), contentPadding = screenPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-item(key = "home-hero") { HomeHeroCard(combinedBalance, combinedIncome, totalExpense, salarySummary.netSalary, todayWork.sumOf { it.hours }, todayWork.sumOf { it.wage }, todayExpense) }
-item(key = "home-stats") { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { HomeSmallCard("本周期工时", "${fmt(periodWork.sumOf { it.hours })}h", "实发 ${yuan(salarySummary.netSalary)}", Modifier.weight(1f)); HomeSmallCard("综合收支", yuan(combinedMonthBalance), "记账收 ${yuan(monthIncome)} + 工资 ${yuan(salarySummary.netSalary)} · 支 ${yuan(monthExpense)}", Modifier.weight(1f)) } }
-item(key = "home-salary-entry") { SalaryBookEntryCard(salaryPeriod, salarySummary, monthIncome, monthExpense, combinedMonthBalance) }
+item(key = "home-hero") { HomeHeroCard(combinedMonthBalance, salarySummary.netSalary, monthIncome, monthExpense) }
+item(key = "today-status") { TodayStatusCard(todayHours, todayWage, todayExpense, todayWork.isNotEmpty(), onAction) }
 item(key = "home-salary-period") { HomeSalaryPeriodCard(salaryPeriod, salarySummary, periodWorkDays, salaryMonth, { salaryMonth = shiftMonth(salaryMonth, it) }, onAction) }
-item(key = "home-overtime") { OvertimeStatsCard(salarySummary) }
-item(key = "home-shift") { ShiftStatsCard(salarySummary) }
-item(key = "salary-section") { SectionTitle("工资与记账明细") }
-item(key = "home-combined-detail") { CombinedFinanceDetailCard(salarySummary, monthIncome, monthExpense, combinedMonthBalance) }
-item(key = "home-salary-detail") { SalaryDetailCard(salarySummary) }
+item(key = "home-salary-entry") { SalaryBookEntryCard(salaryPeriod, salarySummary, monthIncome, monthExpense, combinedMonthBalance) }
+item(key = "work-composition") { WorkCompositionCard(salarySummary) }
+item(key = "salary-detail-summary") { ExpandableSalaryDetailCard(salarySummary) }
 }
 }
 
-@Composable fun HomeHeroCard(balance: Double, income: Double, expense: Double, periodSalary: Double, todayHours: Double, todayWage: Double, todayExpense: Double) { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Text("综合概览", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer); Text(yuan(balance), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { HomeMetricPill("收入", yuan(income), Modifier.weight(1f)); HomeMetricPill("支出", yuan(expense), Modifier.weight(1f)); HomeMetricPill("本周期工资", yuan(periodSalary), Modifier.weight(1f)) }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { HomeMetricPill("今日工时", "${fmt(todayHours)}h", Modifier.weight(1f)); HomeMetricPill("今日工资", yuan(todayWage), Modifier.weight(1f)); HomeMetricPill("今日支出", yuan(todayExpense), Modifier.weight(1f)) } } } }
+@Composable fun HomeHeroCard(balance: Double, periodSalary: Double, monthIncome: Double, monthExpense: Double) { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Text("本月综合结余", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer); Text(yuan(balance), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer); Text("综合结余 = 本月记账收入 + 当前工资周期实发工资 - 本月记账支出", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { HomeMetricPill("本周期实发", yuan(periodSalary), Modifier.weight(1f)); HomeMetricPill("记账收入", yuan(monthIncome), Modifier.weight(1f)); HomeMetricPill("记账支出", yuan(monthExpense), Modifier.weight(1f)) } } } }
 @Composable fun HomeMetricPill(label: String, value: String, modifier: Modifier = Modifier) { Surface(modifier, shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.38f)) { Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) { Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)); Text(value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis) } } }
 @Composable fun HomeSmallCard(title: String, value: String, sub: String, modifier: Modifier = Modifier) { Card(modifier) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(sub, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) } } }
 
-@Composable fun SalaryBookEntryCard(period: SalaryPeriod, summary: SalarySummary, accountIncome: Double, accountExpense: Double, combinedBalance: Double) { OutlinedCard(Modifier.fillMaxWidth(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) { Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(40.dp)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Payments, null, tint = MaterialTheme.colorScheme.primary) } }; Spacer(Modifier.width(10.dp)); Column { Text("记账工资记录", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("${period.start} 至 ${period.end} · 工时自动入账", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) } }; Text("+${yuan(summary.netSalary)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis) }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { AccountStatPill("记账收入", yuan(accountIncome), modifier = Modifier.weight(1f)); AccountStatPill("工时工资", yuan(summary.netSalary), MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f), Modifier.weight(1f)); AccountStatPill("记账支出", yuan(accountExpense), MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f), Modifier.weight(1f)) }; Text("综合结余 ${yuan(combinedBalance)}。这条工资是首页自动汇总记录，不重复写入记账流水，避免统计翻倍。", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
+@Composable fun TodayStatusCard(todayHours: Double, todayWage: Double, todayExpense: Double, hasWork: Boolean, onAction: (String) -> Unit) { OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("今日状态", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text(if (hasWork) "今天已记录工时" else "今日暂未记录工时", color = if (hasWork) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium) }; Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) { FilledTonalButton(onClick = { onAction("work") }, contentPadding = PaddingValues(horizontal = 10.dp)) { Icon(Icons.Default.Schedule, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("记工时") }; OutlinedButton(onClick = { onAction("account") }, contentPadding = PaddingValues(horizontal = 10.dp)) { Icon(Icons.Default.AccountBalanceWallet, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("记一笔") } } }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { AccountStatPill("今日工时", "${fmt(todayHours)}h", MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f), Modifier.weight(1f)); AccountStatPill("今日工资", yuan(todayWage), MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f), Modifier.weight(1f)); AccountStatPill("今日支出", yuan(todayExpense), MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f), Modifier.weight(1f)) } } } }
 
-@Composable fun CombinedFinanceDetailCard(s: SalarySummary, accountIncome: Double, accountExpense: Double, combinedBalance: Double) { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("工资 + 记账明细", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); SalaryLine("记账收入", accountIncome); SalaryLine("工时工资入账", s.netSalary); SalaryLine("综合收入", accountIncome + s.netSalary, true); SalaryLine("记账支出", -accountExpense); Divider(); SalaryLine("综合结余", combinedBalance, true); Text("说明：工时工资按当前工资周期自动计算并参与首页汇总，但不会新增真实账目，手动记账收入仍单独保留。", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
+@Composable fun SalaryBookEntryCard(period: SalaryPeriod, summary: SalarySummary, accountIncome: Double, accountExpense: Double, combinedBalance: Double) { OutlinedCard(Modifier.fillMaxWidth(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) { Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(40.dp)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Payments, null, tint = MaterialTheme.colorScheme.primary) } }; Spacer(Modifier.width(10.dp)); Column { Text("工资自动汇总", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("${period.start} 至 ${period.end} · 只参与综合统计", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) } }; Text(yuan(summary.netSalary), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis) }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { AccountStatPill("工时工资", yuan(summary.netSalary), MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f), Modifier.weight(1f)); AccountStatPill("记账收入", yuan(accountIncome), modifier = Modifier.weight(1f)); AccountStatPill("记账支出", yuan(accountExpense), MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f), Modifier.weight(1f)) }; AccountStatPill("综合结余", yuan(combinedBalance), MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f), Modifier.fillMaxWidth()); Text("工时工资为已扣社保、公积金和个税后的实发工资；这里只参与首页综合汇总，不会重复写入记账流水。", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
 
-@Composable fun HomeSalaryPeriodCard(period: SalaryPeriod, summary: SalarySummary, workDays: Int, salaryMonth: String, onMonthShift: (Int) -> Unit, onAction: (String) -> Unit) { OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("当前工资周期", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("${period.start} 至 ${period.end}", color = MaterialTheme.colorScheme.onSurfaceVariant) }; Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) { TextButton(onClick = { onAction("salaryHistory") }) { Text("历史") }; FilledTonalButton(onClick = { onAction("salarySettings") }) { Icon(Icons.Default.Settings, null); Spacer(Modifier.width(4.dp)); Text("工资规则") } } }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = { onMonthShift(-1) }) { Icon(Icons.Default.ChevronLeft, "上个工资周期") }; Text(monthTitle(salaryMonth), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold); IconButton(onClick = { onMonthShift(1) }) { Icon(Icons.Default.ChevronRight, "下个工资周期") } }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { AccountStatPill("实发工资", yuan(summary.netSalary), modifier = Modifier.weight(1f)); AccountStatPill("加班", "${fmt(summary.overtimeHours)}h", modifier = Modifier.weight(1f)); AccountStatPill("出勤", "${workDays}天", modifier = Modifier.weight(1f)) } } } }
+@Composable
+fun CombinedFinanceDetailCard(s: SalarySummary, accountIncome: Double, accountExpense: Double, combinedBalance: Double) {
+    val combinedIncome = accountIncome + s.netSalary
+    OutlinedCard(
+        Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f))
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(42.dp)) {
+                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.AccountBalanceWallet, null, tint = MaterialTheme.colorScheme.primary) }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("综合收支", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("记账收入 + 工时实发 - 记账支出", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = if (combinedBalance < 0) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.58f) else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f))
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("综合结余", style = MaterialTheme.typography.labelMedium, color = if (combinedBalance < 0) MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.78f) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f))
+                    Text(yuan(combinedBalance), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = if (combinedBalance < 0) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text("综合收入 ${yuan(combinedIncome)} - 记账支出 ${yuan(accountExpense)}", style = MaterialTheme.typography.labelSmall, color = if (combinedBalance < 0) MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.74f) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.74f))
+                }
+            }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AccountStatPill("记账收入", yuan(accountIncome), modifier = Modifier.weight(1f))
+                AccountStatPill("工时实发", yuan(s.netSalary), MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f), Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AccountStatPill("综合收入", yuan(combinedIncome), MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f), Modifier.weight(1f))
+                AccountStatPill("记账支出", yuan(accountExpense), MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f), Modifier.weight(1f))
+            }
+
+            Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)) {
+                Text(
+                    "说明：工时工资只参与综合汇总展示，不会重复写入记账流水；记账收入也不会参与工资个税计算。",
+                    modifier = Modifier.padding(12.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun HomeSalaryPeriodCard(
+    period: SalaryPeriod,
+    summary: SalarySummary,
+    workDays: Int,
+    salaryMonth: String,
+    onMonthShift: (Int) -> Unit,
+    onAction: (String) -> Unit
+) {
+    OutlinedCard(
+        Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(42.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.DateRange, null, tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("当前工资周期", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "${period.start} 至 ${period.end}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                AssistChip(
+                    onClick = { onAction("salaryHistory") },
+                    leadingIcon = { Icon(Icons.Default.History, null, modifier = Modifier.size(18.dp)) },
+                    label = { Text("历史") }
+                )
+            }
+
+            Surface(
+                Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { onMonthShift(-1) }) { Icon(Icons.Default.ChevronLeft, "上个工资周期") }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(monthTitle(salaryMonth), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text("点击两侧切换周期", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = { onMonthShift(1) }) { Icon(Icons.Default.ChevronRight, "下个工资周期") }
+                }
+            }
+
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.78f))
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("本周期实发工资", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f))
+                        Text(yuan(summary.netSalary), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                    FilledTonalButton(
+                        onClick = { onAction("salarySettings") },
+                        contentPadding = PaddingValues(horizontal = 10.dp)
+                    ) {
+                        Icon(Icons.Default.Settings, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("工资规则")
+                    }
+                }
+            }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AccountStatPill("总工时", "${fmt(summary.totalHours)}h", modifier = Modifier.weight(1f))
+                AccountStatPill("出勤", "${workDays}天", modifier = Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AccountStatPill("加班工资", yuan(summary.overtimeWage), MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f), Modifier.weight(1f))
+                AccountStatPill("加班时长", "${fmt(summary.overtimeHours)}h", modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+fun WorkCompositionCard(summary: SalarySummary) {
+    OutlinedCard(
+        Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.24f))
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.size(42.dp)) {
+                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.PieChart, null, tint = MaterialTheme.colorScheme.secondary) }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("工时构成", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("加班、倍率和班次一屏查看", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f))) {
+                Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("本周期加班", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f))
+                        Text("${fmt(summary.overtimeHours)}h", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("加班工资", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f))
+                        Text(yuan(summary.overtimeWage), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                }
+            }
+
+            Text("加班倍率", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AccountStatPill("工作日 1.5x", "${fmt(summary.weekdayOvertimeHours)}h", modifier = Modifier.weight(1f))
+                AccountStatPill("周末 2x", "${fmt(summary.weekendOvertimeHours)}h", modifier = Modifier.weight(1f))
+            }
+            AccountStatPill("节假日 3x", "${fmt(summary.holidayOvertimeHours)}h", MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f), Modifier.fillMaxWidth())
+
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Default.WorkHistory, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("班次统计", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (summary.shiftStats.isEmpty()) {
+                Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)) {
+                    Text("暂无班次数据", modifier = Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                summary.shiftStats.entries.chunked(2).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { (name, pair) -> AccountStatPill(name, "${pair.first}次 · ${fmt(pair.second)}h", modifier = Modifier.weight(1f)) }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable fun ExpandableSalaryDetailCard(summary: SalarySummary) { var expanded by remember { mutableStateOf(false) }; val deductionTotal = summary.deduction + summary.socialSecurity + summary.housingFund + summary.tax; OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("工资明细摘要", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("默认展示关键项，完整明细可展开查看", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }; FilledTonalButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(horizontal = 10.dp)) { Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text(if (expanded) "收起明细" else "完整明细") } }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { AccountStatPill("实发工资", yuan(summary.netSalary), MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f), Modifier.weight(1f)); AccountStatPill("基本工资", yuan(summary.baseSalary), modifier = Modifier.weight(1f)) }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { AccountStatPill("加班工资", yuan(summary.overtimeWage), MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f), Modifier.weight(1f)); AccountStatPill("扣款合计", yuan(deductionTotal), MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f), Modifier.weight(1f)) }; if (expanded) SalaryDetailCard(summary) } } }
+
 
 @Composable fun GuideScreen(modifier: Modifier = Modifier) { LazyColumn(modifier.fillMaxSize(), state = rememberLazyListState(), contentPadding = screenPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("使用说明须知", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text("这里整理小账工时本的主要用法。笔记和待办入口已从主界面移除，当前版本重点保留工时、工资与记账。", color = MaterialTheme.colorScheme.onPrimaryContainer) } } }; item { GuideCard("首页", listOf("查看今天概览、本周期工时、本月收支。", "工资明细已移到首页，可直接查看基本工资、加班工资、扣款、社保公积金、个税和实发工资。")) }; item { GuideCard("工时与工资", listOf("在工时页新增或编辑每天工时。", "节假日、周末、工作日加班倍率会自动计算，也可以在记录里手动调整。", "工时页可直接维护工资调整、节假日和日历补录。")) }; item { GuideCard("记账", listOf("记账页用于记录收入和支出。", "可按全部、支出、收入筛选，并查看本月收支概览。")) }; item { GuideCard("备份", listOf("右上角可导出 JSON 备份。", "需要恢复时使用导入备份，建议定期保存到手机安全位置。")) }; item { GuideCard("项目仓库", listOf("GitHub：", "https://github.com/keai85896-glitch/xiaozhang-gongshi-ben", "可在仓库中查看源码、版本提交和后续更新。")) } } }
 
@@ -257,7 +473,67 @@ fun WorkScreen(
 
 
 @Composable fun SalaryOverviewCard(summary: SalarySummary, period: SalaryPeriod, calendarMonth: String, missedCount: Int, todayHours: Double, workDays: Int, onBackToMonth: () -> Unit) { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) { Column(Modifier.weight(1f)) { Text("工时周期概览", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("当前查看：${monthTitle(calendarMonth)}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("工资周期：${period.start} 至 ${period.end} · 已记录 $workDays 天", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }; TextButton(onClick = onBackToMonth) { Text("回本月") } }; Text(yuan(summary.netSalary), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { AccountStatPill("实发工资", yuan(summary.netSalary), MaterialTheme.colorScheme.primaryContainer, Modifier.weight(1f)); AccountStatPill("总工时", "${fmt(summary.totalHours)}h", MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f)); AccountStatPill("加班工资", yuan(summary.overtimeWage), MaterialTheme.colorScheme.tertiaryContainer, Modifier.weight(1f)) }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { AccountStatPill("今日", "${fmt(todayHours)}h", MaterialTheme.colorScheme.surfaceVariant, Modifier.weight(1f)); AccountStatPill("漏记", "${missedCount}天", if (missedCount > 0) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant, Modifier.weight(1f)); AccountStatPill("调休", "${fmt(summary.compLeaveHours)}h", MaterialTheme.colorScheme.surfaceVariant, Modifier.weight(1f)) } } } }
-@Composable fun SalaryDetailCard(s: SalarySummary) { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("工时工资明细", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); SalaryLine("基本工资", s.baseSalary); SalaryLine("正常工资", s.normalWage); SalaryLine("加班工资", s.overtimeWage); SalaryLine("补贴", s.allowance); SalaryLine("奖金", s.bonus); SalaryLine("扣款", -s.deduction); Divider(); SalaryLine("社保个人", -s.socialSecurity); SalaryLine("公积金个人", -s.housingFund); SalaryLine("应纳税所得额", s.taxableIncome); SalaryLine("个人所得税", -s.tax); Divider(); SalaryLine("实发工资", s.netSalary, strong = true) } } }
+@Composable
+fun SalaryDetailCard(s: SalarySummary) {
+    val deductionTotal = s.deduction + s.socialSecurity + s.housingFund + s.tax
+    OutlinedCard(
+        Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.24f))
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.size(42.dp)) {
+                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Payments, null, tint = MaterialTheme.colorScheme.secondary) }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("工资明细", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("工资构成、补贴奖金、扣款税费", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.66f))) {
+                Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("实发工资", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f))
+                        Text(yuan(s.netSalary), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("扣款合计", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f))
+                        Text(yuan(deductionTotal), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
+            }
+
+            Text("工资构成", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AccountStatPill("基本工资", yuan(s.baseSalary), modifier = Modifier.weight(1f))
+                AccountStatPill("正常工资", yuan(s.normalWage), modifier = Modifier.weight(1f))
+            }
+            AccountStatPill("加班工资", yuan(s.overtimeWage), MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f), Modifier.fillMaxWidth())
+
+            Text("补贴与奖金", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AccountStatPill("补贴", yuan(s.allowance), modifier = Modifier.weight(1f))
+                AccountStatPill("奖金", yuan(s.bonus), modifier = Modifier.weight(1f))
+            }
+
+            HorizontalDivider()
+            Text("扣款与税费", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AccountStatPill("手动扣款", yuan(s.deduction), MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.62f), Modifier.weight(1f))
+                AccountStatPill("社保个人", yuan(s.socialSecurity), MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.62f), Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AccountStatPill("公积金个人", yuan(s.housingFund), MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.62f), Modifier.weight(1f))
+                AccountStatPill("个人所得税", yuan(s.tax), MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.62f), Modifier.weight(1f))
+            }
+            AccountStatPill("应纳税所得额", yuan(s.taxableIncome), MaterialTheme.colorScheme.surfaceVariant, Modifier.fillMaxWidth())
+        }
+    }
+}
+
 @Composable fun SalaryLine(label: String, amount: Double, strong: Boolean = false) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(label, fontWeight = if (strong) FontWeight.Bold else FontWeight.Normal); Text(yuan(amount), fontWeight = if (strong) FontWeight.Bold else FontWeight.Normal, color = if (amount < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) } }
 @Composable fun OvertimeStatsCard(s: SalarySummary) { OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("加班统计", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { AccountStatPill("加班合计", "${fmt(s.overtimeHours)}h", MaterialTheme.colorScheme.primaryContainer, Modifier.weight(1f)); AccountStatPill("加班工资", yuan(s.overtimeWage), MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f)) }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { AccountStatPill("工作日1.5x", "${fmt(s.weekdayOvertimeHours)}h", MaterialTheme.colorScheme.surfaceVariant, Modifier.weight(1f)); AccountStatPill("周末2x", "${fmt(s.weekendOvertimeHours)}h", MaterialTheme.colorScheme.surfaceVariant, Modifier.weight(1f)); AccountStatPill("节假日3x", "${fmt(s.holidayOvertimeHours)}h", MaterialTheme.colorScheme.surfaceVariant, Modifier.weight(1f)) } } } }
 @Composable fun ShiftStatsCard(s: SalarySummary) { OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text("班次统计", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); if (s.shiftStats.isEmpty()) Text("暂无班次数据", color = MaterialTheme.colorScheme.onSurfaceVariant) else s.shiftStats.forEach { (name, pair) -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(name); Text("${pair.first}次 · ${fmt(pair.second)}h", color = MaterialTheme.colorScheme.onSurfaceVariant) } } } } }
@@ -274,34 +550,174 @@ ElevatedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), vertical
 @Composable fun CalendarDayCell(date: String, lunarText: String, hours: Double, multiplier: Double, isHoliday: Boolean, isToday: Boolean, isMissed: Boolean, isRestDay: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) { val day = date.takeLast(2).trimStart('0'); val hasRecord = hours > 0.0; val bg = when { isMissed -> MaterialTheme.colorScheme.errorContainer; isHoliday -> MaterialTheme.colorScheme.secondaryContainer; hasRecord -> MaterialTheme.colorScheme.primaryContainer; isToday -> MaterialTheme.colorScheme.tertiaryContainer; isRestDay -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f); else -> MaterialTheme.colorScheme.surface }; val fg = when { isMissed -> MaterialTheme.colorScheme.onErrorContainer; else -> MaterialTheme.colorScheme.onSurface }; val border = if (isToday) BorderStroke(1.5.dp, MaterialTheme.colorScheme.tertiary) else null; val marker = when { hasRecord && multiplier > 1.0 -> "${fmt(multiplier)}x"; hasRecord -> "${fmt(hours)}h"; isMissed -> ""; isToday -> "今天"; isRestDay -> "休"; else -> "" }; Surface(onClick = onClick, modifier = modifier.height(60.dp), shape = MaterialTheme.shapes.medium, color = bg, tonalElevation = if (hasRecord || isToday || isMissed || isHoliday) 2.dp else 0.dp, border = border) { Box(Modifier.fillMaxSize().padding(3.dp)) { Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(day, color = fg, style = MaterialTheme.typography.bodyMedium, fontWeight = if (hasRecord || isToday || isMissed || isHoliday) FontWeight.Bold else FontWeight.Normal, maxLines = 1); Text(lunarText, color = fg.copy(alpha = if (isHoliday) 0.96f else 0.70f), style = MaterialTheme.typography.labelSmall, fontWeight = if (isHoliday) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis); if (marker.isNotBlank()) Text(marker, color = fg.copy(alpha = 0.82f), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }; if (hasRecord) Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.primary, modifier = Modifier.align(Alignment.TopEnd).size(6.dp)) {} } } }
 
 @Composable fun WorkRow(r: WorkRecord, onEdit: (WorkRecord) -> Unit, onDelete: (WorkRecord) -> Unit) { Card(Modifier.fillMaxWidth().clickable { onEdit(r) }) { Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) { Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(38.dp)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Schedule, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) } }; Spacer(Modifier.width(10.dp)); Column(Modifier.weight(1f)) { Text("${r.startTime}-${r.endTime} · ${r.shiftType}", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis); Text("${r.workType} · 正常${fmt(r.effectiveNormalHours)}h · 加班${fmt(r.effectiveOvertimeHours)}h · ${fmt(r.effectiveMultiplier)}x", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis); if (r.allowance != 0.0 || r.deduction != 0.0 || r.compLeaveHours != 0.0) Text("补贴${yuan(r.allowance)} · 扣款${yuan(r.deduction)} · 调休${fmt(r.compLeaveHours)}h", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }; Column(horizontalAlignment = Alignment.End) { Text("${fmt(r.hours)}h", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); Text(yuan(r.wage), style = MaterialTheme.typography.bodySmall); Row { IconButton(onClick = { onEdit(r) }, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.Edit, "编辑") }; IconButton(onClick = { onDelete(r) }, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.Delete, "删除") } } } } } }
-
 @Composable fun SalaryHistoryDialog(records: List<WorkRecord>, accounts: List<AccountRecord>, settings: SalarySettings, adjustments: List<SalaryAdjustment>, onDismiss: () -> Unit) {
     val periods = remember(records, adjustments, settings) { salaryHistoryPeriods(records, adjustments, settings) }
     var selected by remember(periods) { mutableStateOf<SalaryPeriod?>(null) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (selected == null) "工资历史" else "工资历史详情") }, text = {
-        if (selected == null) {
-            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(periods, key = { it.label + it.start }) { p ->
-                    val s = calculateSalary(records, settings, adjustments, p); val days = records.filter { it.date in p.start..p.end }.map { it.date }.distinct().size
-                    OutlinedCard(Modifier.fillMaxWidth().clickable { selected = p }) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text("${p.start} 至 ${p.end}", fontWeight = FontWeight.Bold); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { AccountStatPill("实发", yuan(s.netSalary), modifier = Modifier.weight(1f)); AccountStatPill("工时", "${fmt(s.totalHours)}h", modifier = Modifier.weight(1f)) }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { AccountStatPill("加班", yuan(s.overtimeWage), modifier = Modifier.weight(1f)); AccountStatPill("出勤", "${days}天", modifier = Modifier.weight(1f)) } } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (selected == null) "工资历史" else "工资历史详情") },
+        text = {
+            if (selected == null) {
+                val latest = periods.firstOrNull()
+                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    item {
+                        SalaryHistoryIntroCard(
+                            title = "按工资周期查看往期收入",
+                            sub = "每个周期同时汇总工时实发工资和该周期内的记账收支，点击卡片可查看完整明细。"
+                        )
+                    }
+                    items(periods, key = { it.label + it.start }) { p ->
+                        val s = calculateSalary(records, settings, adjustments, p)
+                        val days = records.filter { it.date in p.start..p.end }.map { it.date }.distinct().size
+                        val periodAccounts = accounts.filter { it.dateTime.take(10) in p.start..p.end }
+                        val accountIncome = periodAccounts.filter { it.type == TYPE_INCOME }.sumOf { it.amount }
+                        val accountExpense = periodAccounts.filter { it.type == TYPE_EXPENSE }.sumOf { it.amount }
+                        val combinedIncome = accountIncome + s.netSalary
+                        val combinedBalance = combinedIncome - accountExpense
+                        SalaryHistoryPeriodCard(
+                            period = p,
+                            summary = s,
+                            workDays = days,
+                            accountIncome = accountIncome,
+                            accountExpense = accountExpense,
+                            combinedIncome = combinedIncome,
+                            combinedBalance = combinedBalance,
+                            isLatest = p == latest,
+                            onClick = { selected = p }
+                        )
+                    }
+                }
+            } else {
+                val p = selected!!
+                val s = calculateSalary(records, settings, adjustments, p)
+                val days = records.filter { it.date in p.start..p.end }.map { it.date }.distinct().size
+                val periodAccounts = accounts.filter { it.dateTime.take(10) in p.start..p.end }
+                val accountIncome = periodAccounts.filter { it.type == TYPE_INCOME }.sumOf { it.amount }
+                val accountExpense = periodAccounts.filter { it.type == TYPE_EXPENSE }.sumOf { it.amount }
+                val combinedIncome = accountIncome + s.netSalary
+                val combinedBalance = combinedIncome - accountExpense
+                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 600.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    item { SalaryHistoryDetailHeroCard(p, s, days, accountIncome, accountExpense, combinedIncome, combinedBalance) }
+                    item { SalaryHistorySectionTitle("综合收支") }
+                    item { CombinedFinanceDetailCard(s, accountIncome, accountExpense, combinedBalance) }
+                    item { SalaryHistorySectionTitle("工资明细") }
+                    item { SalaryDetailCard(s) }
+                    item { SalaryHistorySectionTitle("工时构成") }
+                    item { WorkCompositionCard(s) }
                 }
             }
-        } else {
-            val p = selected!!; val s = calculateSalary(records, settings, adjustments, p)
-            val periodAccounts = accounts.filter { it.dateTime.take(10) in p.start..p.end }
-            val accountIncome = periodAccounts.filter { it.type == TYPE_INCOME }.sumOf { it.amount }
-            val accountExpense = periodAccounts.filter { it.type == TYPE_EXPENSE }.sumOf { it.amount }
-            val combinedBalance = accountIncome + s.netSalary - accountExpense
-            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                item { Text("${p.start} 至 ${p.end}", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                item { CombinedFinanceDetailCard(s, accountIncome, accountExpense, combinedBalance) }
-                item { SalaryDetailCard(s) }
-                item { OvertimeStatsCard(s) }
-                item { ShiftStatsCard(s) }
+        },
+        confirmButton = { if (selected == null) TextButton(onClick = onDismiss) { Text("关闭") } else TextButton(onClick = { selected = null }) { Text("返回列表") } },
+        dismissButton = { if (selected != null) TextButton(onClick = onDismiss) { Text("关闭") } }
+    )
+}
+
+@Composable
+fun SalaryHistoryIntroCard(title: String, sub: String) {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f))) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f), modifier = Modifier.size(42.dp)) {
+                Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.ReceiptLong, null, tint = MaterialTheme.colorScheme.primary) }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text(sub, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f))
             }
         }
-    }, confirmButton = { if (selected == null) TextButton(onClick = onDismiss) { Text("关闭") } else TextButton(onClick = { selected = null }) { Text("返回列表") } }, dismissButton = { if (selected != null) TextButton(onClick = onDismiss) { Text("关闭") } })
+    }
 }
+
+@Composable
+fun SalaryHistoryPeriodCard(
+    period: SalaryPeriod,
+    summary: SalarySummary,
+    workDays: Int,
+    accountIncome: Double,
+    accountExpense: Double,
+    combinedIncome: Double,
+    combinedBalance: Double,
+    isLatest: Boolean,
+    onClick: () -> Unit
+) {
+    OutlinedCard(
+        Modifier.fillMaxWidth().clickable { onClick() },
+        border = BorderStroke(1.dp, if (isLatest) MaterialTheme.colorScheme.primary.copy(alpha = 0.58f) else MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(period.label.ifBlank { "工资周期" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        if (isLatest) AssistChip(onClick = {}, label = { Text("最近") })
+                    }
+                    Text("${period.start} 至 ${period.end}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.size(36.dp)) {
+                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.ChevronRight, contentDescription = "查看详情", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+            }
+
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = if (combinedBalance < 0) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f) else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f))) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("综合结余", style = MaterialTheme.typography.labelMedium, color = if (combinedBalance < 0) MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.78f) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f))
+                    Text(yuan(combinedBalance), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = if (combinedBalance < 0) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text("收入 ${yuan(combinedIncome)} · 支出 ${yuan(accountExpense)}", style = MaterialTheme.typography.labelSmall, color = if (combinedBalance < 0) MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.74f) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.74f))
+                }
+            }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AccountStatPill("实发工资", yuan(summary.netSalary), MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f), Modifier.weight(1f))
+                AccountStatPill("总工时", "${fmt(summary.totalHours)}h", modifier = Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AccountStatPill("记账收入", yuan(accountIncome), modifier = Modifier.weight(1f))
+                AccountStatPill("记账支出", yuan(accountExpense), MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.62f), Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("出勤 ${workDays}天 · 加班 ${fmt(summary.overtimeHours)}h", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("查看明细", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
+
+@Composable
+fun SalaryHistoryDetailHeroCard(
+    period: SalaryPeriod,
+    summary: SalarySummary,
+    workDays: Int,
+    accountIncome: Double,
+    accountExpense: Double,
+    combinedIncome: Double,
+    combinedBalance: Double
+) {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("周期账单详情", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text("${period.start} 至 ${period.end}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f))
+                }
+                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.32f), modifier = Modifier.size(42.dp)) {
+                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.ReceiptLong, null, tint = MaterialTheme.colorScheme.primary) }
+                }
+            }
+            Text(yuan(combinedBalance), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            Text("记账收入 ${yuan(accountIncome)} + 工时实发 ${yuan(summary.netSalary)} - 记账支出 ${yuan(accountExpense)}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HomeMetricPill("综合收入", yuan(combinedIncome), Modifier.weight(1f))
+                HomeMetricPill("实发工资", yuan(summary.netSalary), Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HomeMetricPill("总工时", "${fmt(summary.totalHours)}h", Modifier.weight(1f))
+                HomeMetricPill("出勤/加班", "${workDays}天 · ${fmt(summary.overtimeHours)}h", Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable fun SalaryHistorySectionTitle(text: String) { Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) { Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.primary, modifier = Modifier.size(4.dp, 18.dp)) {}; Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold) } }
+
 
 @Composable fun WorkDateDetailCard(date: String, records: List<WorkRecord>, holidays: List<HolidayRecord>, isMissed: Boolean, onEdit: (WorkRecord) -> Unit, onDelete: (WorkRecord) -> Unit, onAddForDate: (String) -> Unit) {
     val holiday = holidays.firstOrNull { it.enabled && it.date == date }

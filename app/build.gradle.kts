@@ -20,8 +20,17 @@ android {
         }
     }
 
+    signingConfigs {
+        getByName("debug")
+    }
+
     buildTypes {
         release {
+            // 当前 Proot 构建环境下标准 release 打包会丢失 AndroidManifest.xml/resources.arsc。
+            // 临时继承 debug 的完整打包链路，保证生成的 release APK 可安装。
+            initWith(getByName("debug"))
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
