@@ -1,0 +1,13 @@
+from pathlib import Path
+p=Path('/data/user/0/com.ai.assistance.operit/files/workspace/b3f45e12-c3aa-438a-940d-2956d9b3337e/app/src/main/java/com/java/myapplication/MainActivity.kt')
+s=p.read_text()
+s=s.replace('    var selectedDate by remember { mutableStateOf(dayText()) }\n','')
+s=s.replace('    val selectedRecords = remember(records, selectedDate) { records.filter { it.date == selectedDate } }\n','')
+s=s.replace('        item(key = "calendar") { WorkCalendarCard(records = records, holidays = holidays, month = calendarMonth, selectedDate = selectedDate, onMonthChange = { calendarMonth = it; selectedDate = monthDays(it).firstOrNull() ?: it }, onDateClick = { date -> selectedDate = date }) }\n        item(key = "date-detail-$selectedDate") { WorkDateDetailCard(date = selectedDate, records = selectedRecords, holidays = holidays, isMissed = selectedDate in missed, onEdit = onEdit, onDelete = onDelete, onAddForDate = onAddForDate) }\n','        item(key = "calendar") { WorkCalendarCard(records = records, holidays = holidays, month = calendarMonth, onMonthChange = { calendarMonth = it }, onDateClick = { date -> records.filter { it.date == date }.maxByOrNull { it.id }?.let(onEdit) ?: onAddForDate(date) }) }\n')
+# ensure any remaining selected parameter in WorkCalendar call is removed if formatting differs
+s=s.replace('month = calendarMonth, selectedDate = selectedDate, onMonthChange', 'month = calendarMonth, onMonthChange')
+s=s.replace('; selectedDate = today', '')
+s=s.replace('; selectedDate = monthDays(it).firstOrNull() ?: it', '')
+s=s.replace('onDateClick = { date -> selectedDate = date }', 'onDateClick = { date -> records.filter { it.date == date }.maxByOrNull { it.id }?.let(onEdit) ?: onAddForDate(date) }')
+p.write_text(s)
+print('fixed revert calendar click')

@@ -1,0 +1,166 @@
+package com.java.myapplication
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import com.java.myapplication.ui.theme.MyApplicationTheme
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent { MyApplicationTheme { PersonalBookApp() } }
+    }
+}
+
+enum class TabItem(val title: String) { Home("首页"), Work("工时"), Account("记账"), Notes("笔记"), Todos("待办") }
+enum class WorkFilter(val title: String) { All("全部"), Month("本月"), Today("今日") }
+enum class AccountFilter(val title: String) { All("全部"), Expense("支出"), Income("收入") }
+enum class TodoFilter(val title: String) { All("全部"), Undone("未完成"), Today("今日"), Done("已完成"), Overdue("过期") }
+data class DeleteRequest(val type: String, val id: Long, val title: String, val detail: String)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PersonalBookApp() {
+    val context = LocalContext.current
+    val store = remember { LocalStore(context) }
+    var tab by remember { mutableStateOf(TabItem.Home) }
+    var refresh by remember { mutableIntStateOf(0) }
+    var dialog by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var importOverwrite by remember { mutableStateOf(false) }
+    var editWork by remember { mutableStateOf<WorkRecord?>(null) }
+    var editAccount by remember { mutableStateOf<AccountRecord?>(null) }
+    var editNote by remember { mutableStateOf<NoteRecord?>(null) }
+    var editTodo by remember { mutableStateOf<TodoRecord?>(null) }
+    var deleteRequest by remember { mutableStateOf<DeleteRequest?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    fun reload() { refresh++ }
+
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                val json = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ?: error("无法读取所选文件")
+                store.importJson(json, importOverwrite)
+                reload()
+            }.onSuccess { message = "导入完成" }
+                .onFailure { message = "导入失败：${it.message}" }
+        }
+    }
+
+    LaunchedEffect(message) { message?.let { snackbarHostState.showSnackbar(it); message = null } }
+    val work = remember(refresh) { store.allWork() }
+    val accounts = remember(refresh) { store.allAccounts() }
+    val notes = remember(refresh) { store.allNotes() }
+    val todos = remember(refresh) { store.allTodos() }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = { TopAppBar(title = { Text(if (tab == TabItem.Home) "小账工时本" else tab.title) }, actions = {
+            IconButton(onClick = { runCatching { store.exportToJson(context) }.onSuccess { message = "已导出：${it.absolutePath}" }.onFailure { message = "导出失败：${it.message}" } }) { Icon(Icons.Default.FileUpload, contentDescription = "导出备份") }
+            IconButton(onClick = { dialog = "import" }) { Icon(Icons.Default.SettingsBackupRestore, contentDescription = "导入备份") }
+        }) },
+        bottomBar = { NavigationBar { TabItem.entries.forEach { item -> NavigationBarItem(selected = tab == item, onClick = { tab = item }, icon = { Icon(tabIcon(item), contentDescription = item.title) }, label = { Text(item.title) }) } } },
+        floatingActionButton = { ExtendedFloatingActionButton(onClick = { when (tab) { TabItem.Home -> dialog = "quick"; TabItem.Work -> { editWork = null; dialog = "work" }; TabItem.Account -> { editAccount = null; dialog = "account" }; TabItem.Notes -> { editNote = null; dialog = "note" }; TabItem.Todos -> { editTodo = null; dialog = "todo" } } }, icon = { Icon(Icons.Default.Add, contentDescription = null) }, text = { Text("新建") }) }
+    ) { padding ->
+        when (tab) {
+            TabItem.Home -> HomeScreen(work, accounts, notes, todos, Modifier.padding(padding), onAction = { key -> editWork = null; editAccount = null; editNote = null; editTodo = null; dialog = key })
+            TabItem.Work -> WorkScreen(work, Modifier.padding(padding), onEdit = { editWork = it; dialog = "work" }, onDelete = { r -> deleteRequest = DeleteRequest("work", r.id, "删除工时记录？", "${r.date} ${r.startTime}-${r.endTime}") })
+            TabItem.Account -> AccountScreen(accounts, Modifier.padding(padding), onEdit = { editAccount = it; dialog = "account" }, onDelete = { r -> deleteRequest = DeleteRequest("account", r.id, "删除账目？", "${r.category} · ${yuan(r.amount)}") })
+            TabItem.Notes -> NotesScreen(notes, Modifier.padding(padding), onEdit = { editNote = it; dialog = "note" }, onDelete = { n -> deleteRequest = DeleteRequest("note", n.id, "删除笔记？", n.title.ifBlank { "无标题笔记" }) })
+            TabItem.Todos -> TodosScreen(todos, Modifier.padding(padding), onEdit = { editTodo = it; dialog = "todo" }, onToggle = { t -> store.saveTodo(t.copy(done = !t.done)); reload(); message = if (!t.done) "已完成，可再次点击取消" else "已取消完成" }, onDelete = { t -> deleteRequest = DeleteRequest("todo", t.id, "删除待办？", t.title) })
+        }
+    }
+
+    when (dialog) {
+        "quick" -> QuickAddDialog(onDismiss = { dialog = null }, onPick = { editWork = null; editAccount = null; editNote = null; editTodo = null; dialog = it })
+        "work" -> WorkDialog(record = editWork, onDismiss = { dialog = null; editWork = null }, onSave = { store.saveWork(it); reload(); dialog = null; editWork = null; message = "工时已保存" })
+        "account" -> AccountDialog(record = editAccount, onDismiss = { dialog = null; editAccount = null }, onSave = { store.saveAccount(it); reload(); dialog = null; editAccount = null; message = "账目已保存" })
+        "note" -> NoteDialog(record = editNote, onDismiss = { dialog = null; editNote = null }, onSave = { store.saveNote(it); reload(); dialog = null; editNote = null; message = "笔记已保存" })
+        "todo" -> TodoDialog(record = editTodo, onDismiss = { dialog = null; editTodo = null }, onSave = { store.saveTodo(it); reload(); dialog = null; editTodo = null; message = "待办已保存" })
+        "import" -> ImportDialog(overwrite = importOverwrite, onOverwriteChange = { importOverwrite = it }, onDismiss = { dialog = null }, onPickFile = { dialog = null; importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) })
+    }
+
+    deleteRequest?.let { req -> AlertDialog(onDismissRequest = { deleteRequest = null }, icon = { Icon(Icons.Default.Warning, contentDescription = null) }, title = { Text(req.title) }, text = { Text("确认删除：${req.detail}\n删除后不可直接恢复，建议重要数据先导出备份。") }, confirmButton = { FilledTonalButton(onClick = { when (req.type) { "work" -> store.deleteWork(req.id); "account" -> store.deleteAccount(req.id); "note" -> store.deleteNote(req.id); "todo" -> store.deleteTodo(req.id) }; reload(); deleteRequest = null; message = "已删除" }) { Text("确认删除") } }, dismissButton = { TextButton(onClick = { deleteRequest = null }) { Text("取消") } }) }
+}
+
+private fun tabIcon(item: TabItem) = when (item) { TabItem.Home -> Icons.Default.Dashboard; TabItem.Work -> Icons.Default.AccessTime; TabItem.Account -> Icons.Default.AccountBalanceWallet; TabItem.Notes -> Icons.Default.Note; TabItem.Todos -> Icons.Default.CheckCircle }
+
+@Composable
+fun HomeScreen(work: List<WorkRecord>, accounts: List<AccountRecord>, notes: List<NoteRecord>, todos: List<TodoRecord>, modifier: Modifier = Modifier, onAction: (String) -> Unit) {
+    val today = dayText(); val month = monthText(); val todayWork = work.filter { it.date == today }; val monthWork = work.filter { it.date.startsWith(month) }; val todayExpense = accounts.filter { it.type == TYPE_EXPENSE && it.dateTime.startsWith(today) }.sumOf { it.amount }; val monthIncome = accounts.filter { it.type == TYPE_INCOME && it.dateTime.startsWith(month) }.sumOf { it.amount }; val monthExpense = accounts.filter { it.type == TYPE_EXPENSE && it.dateTime.startsWith(month) }.sumOf { it.amount }
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { ElevatedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("今日概览", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Metric("今日工时", "${fmt(todayWork.sumOf { it.hours })}h"); Metric("今日工资", yuan(todayWork.sumOf { it.wage })) }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Metric("今日支出", yuan(todayExpense)); Metric("未完成待办", todos.count { !it.done }.toString()) } } } }
+        item { QuickActions(onAction) }; item { SummaryCard("本月工时 / 工资", "${fmt(monthWork.sumOf { it.hours })} 小时", "预估工资 ${yuan(monthWork.sumOf { it.wage })}") }; item { SummaryCard("本月收支", "结余 ${yuan(monthIncome - monthExpense)}", "收入 ${yuan(monthIncome)} · 支出 ${yuan(monthExpense)}") }; item { SectionTitle("今日待办") }
+        val todayTodos = todos.filter { !it.done && it.dueDate <= today }.take(3); if (todayTodos.isEmpty()) item { EmptyCard("暂无待办", "点击新建安排今天要做的事") } else items(todayTodos, key = { "home-todo-${it.id}" }) { TodoRow(it, {}, {}, {}) }
+        item { SectionTitle("最近笔记") }; if (notes.isEmpty()) item { EmptyCard("还没有笔记", "记录想法、账目说明或工作备忘") } else items(notes.take(3), key = { "home-note-${it.id}" }) { NoteRow(it, {}, {}) }
+    }
+}
+
+@Composable fun QuickActions(onAction: (String) -> Unit) { ElevatedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Text("快速记录", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("work" to "记工时", "account" to "记账", "note" to "写笔记", "todo" to "加待办").forEach { (k, t) -> FilledTonalButton(onClick = { onAction(k) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text(t, maxLines = 1) } } } } } }
+@Composable fun Metric(label: String, value: String) { Column { Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) } }
+@Composable fun SectionTitle(text: String) { Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp)) }
+@Composable fun SummaryCard(title: String, value: String, sub: String) { ElevatedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(title, style = MaterialTheme.typography.titleMedium); Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text(sub, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
+@Composable fun EmptyCard(title: String, sub: String) { OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(sub, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
+
+@Composable fun WorkScreen(records: List<WorkRecord>, modifier: Modifier, onEdit: (WorkRecord) -> Unit, onDelete: (WorkRecord) -> Unit) { var filter by remember { mutableStateOf(WorkFilter.Month) }; val today = dayText(); val month = monthText(); val shown = records.filter { when (filter) { WorkFilter.All -> true; WorkFilter.Month -> it.date.startsWith(month); WorkFilter.Today -> it.date == today } }; val m = records.filter { it.date.startsWith(month) }; LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { item { SummaryCard("本月统计", "${fmt(m.sumOf { it.hours })} 小时", "预估工资 ${yuan(m.sumOf { it.wage })}") }; item { FilterRow(WorkFilter.entries, filter, { it.title }) { filter = it } }; if (shown.isEmpty()) item { EmptyCard("没有匹配的工时记录", "可切换筛选或点击右下角新建") } else items(shown, key = { it.id }) { r -> WorkRow(r, onEdit, onDelete) } } }
+@Composable fun WorkRow(r: WorkRecord, onEdit: (WorkRecord) -> Unit, onDelete: (WorkRecord) -> Unit) { ElevatedCard(Modifier.fillMaxWidth().clickable { onEdit(r) }) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(displayDate(r.date), fontWeight = FontWeight.Bold); Text("${r.startTime}-${r.endTime} · 休息${fmt(r.breakHours)}h · 时薪${yuan(r.hourlyRate)}", color = MaterialTheme.colorScheme.onSurfaceVariant); if (r.note.isNotBlank()) Text(r.note, maxLines = 1, overflow = TextOverflow.Ellipsis) }; Column(horizontalAlignment = Alignment.End) { Text("${fmt(r.hours)}h", fontWeight = FontWeight.Bold); Text(yuan(r.wage)); Row { IconButton(onClick = { onEdit(r) }) { Icon(Icons.Default.Edit, "编辑") }; IconButton(onClick = { onDelete(r) }) { Icon(Icons.Default.Delete, "删除") } } } } } }
+
+@Composable fun AccountScreen(records: List<AccountRecord>, modifier: Modifier, onEdit: (AccountRecord) -> Unit, onDelete: (AccountRecord) -> Unit) { var filter by remember { mutableStateOf(AccountFilter.All) }; val month = monthText(); val m = records.filter { it.dateTime.startsWith(month) }; val income = m.filter { it.type == TYPE_INCOME }.sumOf { it.amount }; val expense = m.filter { it.type == TYPE_EXPENSE }.sumOf { it.amount }; val shown = records.filter { when (filter) { AccountFilter.All -> true; AccountFilter.Expense -> it.type == TYPE_EXPENSE; AccountFilter.Income -> it.type == TYPE_INCOME } }; LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { item { SummaryCard("本月收支", "结余 ${yuan(income - expense)}", "收入 ${yuan(income)} · 支出 ${yuan(expense)}") }; item { FilterRow(AccountFilter.entries, filter, { it.title }) { filter = it } }; if (shown.isEmpty()) item { EmptyCard("没有匹配的账目", "可切换筛选或点击右下角记一笔") } else items(shown, key = { it.id }) { AccountRow(it, onEdit, onDelete) } } }
+@Composable fun AccountRow(r: AccountRecord, onEdit: (AccountRecord) -> Unit, onDelete: (AccountRecord) -> Unit) { ElevatedCard(Modifier.fillMaxWidth().clickable { onEdit(r) }) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(if (r.type == TYPE_INCOME) Icons.Default.TrendingUp else Icons.Default.TrendingDown, null, tint = if (r.type == TYPE_INCOME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text("${r.category} · ${r.type}", fontWeight = FontWeight.Bold); Text(displayDateTime(r.dateTime), color = MaterialTheme.colorScheme.onSurfaceVariant); if (r.note.isNotBlank()) Text(r.note, maxLines = 1, overflow = TextOverflow.Ellipsis) }; Text((if (r.type == TYPE_INCOME) "+" else "-") + yuan(r.amount), fontWeight = FontWeight.Bold); IconButton(onClick = { onEdit(r) }) { Icon(Icons.Default.Edit, "编辑") }; IconButton(onClick = { onDelete(r) }) { Icon(Icons.Default.Delete, "删除") } } } }
+
+@Composable fun NotesScreen(notes: List<NoteRecord>, modifier: Modifier, onEdit: (NoteRecord) -> Unit, onDelete: (NoteRecord) -> Unit) { LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { if (notes.isEmpty()) item { EmptyCard("还没有笔记", "点击右下角新建笔记") } else items(notes, key = { it.id }) { NoteRow(it, onEdit, onDelete) } } }
+@Composable fun NoteRow(n: NoteRecord, onEdit: (NoteRecord) -> Unit, onDelete: (NoteRecord) -> Unit) { ElevatedCard(Modifier.fillMaxWidth().clickable { onEdit(n) }) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text((if (n.pinned) "📌 " else "") + n.title, fontWeight = FontWeight.Bold); Text(n.content.ifBlank { "无内容" }, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant); if (n.tags.isNotBlank()) Text("#${n.tags}", style = MaterialTheme.typography.labelMedium) }; IconButton(onClick = { onEdit(n) }) { Icon(Icons.Default.Edit, "编辑") }; IconButton(onClick = { onDelete(n) }) { Icon(Icons.Default.Delete, "删除") } } } }
+
+@Composable fun TodosScreen(todos: List<TodoRecord>, modifier: Modifier, onEdit: (TodoRecord) -> Unit, onToggle: (TodoRecord) -> Unit, onDelete: (TodoRecord) -> Unit) { var filter by remember { mutableStateOf(TodoFilter.Undone) }; val today = dayText(); val shown = todos.filter { todoMatchesFilter(it, filter, today) }; LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { item { FilterRow(TodoFilter.entries, filter, { f -> "${f.title} ${todos.count { todoMatchesFilter(it, f, today) }}" }) { filter = it } }; if (shown.isEmpty()) item { EmptyCard("没有匹配的待办", "可切换筛选或点击右下角新增") } else items(shown, key = { it.id }) { TodoRow(it, { onToggle(it) }, { onEdit(it) }, { onDelete(it) }) } } }
+private fun todoMatchesFilter(t: TodoRecord, f: TodoFilter, today: String) = when (f) { TodoFilter.All -> true; TodoFilter.Undone -> !t.done; TodoFilter.Today -> !t.done && t.dueDate <= today; TodoFilter.Done -> t.done; TodoFilter.Overdue -> !t.done && t.dueDate < today }
+@Composable fun TodoRow(t: TodoRecord, onToggle: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) { ElevatedCard(Modifier.fillMaxWidth().clickable { onEdit() }) { Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = t.done, onCheckedChange = { onToggle() }); Column(Modifier.weight(1f)) { Text(t.title, fontWeight = FontWeight.Bold); Text("截止 ${t.dueDate} · 优先级 ${t.priority}", color = MaterialTheme.colorScheme.onSurfaceVariant); if (t.description.isNotBlank()) Text(t.description, maxLines = 1, overflow = TextOverflow.Ellipsis) }; IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "编辑") }; IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "删除") } } } }
+
+@Composable fun <T> FilterRow(items: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) { Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) { items.forEach { item -> FilterChip(selected = item == selected, onClick = { onSelect(item) }, label = { Text(label(item), maxLines = 1) }) } } }
+@Composable fun QuickAddDialog(onDismiss: () -> Unit, onPick: (String) -> Unit) { AlertDialog(onDismissRequest = onDismiss, title = { Text("快速新建") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { listOf("work" to "记工时", "account" to "记账", "note" to "写笔记", "todo" to "加待办").forEach { (k, t) -> FilledTonalButton(onClick = { onPick(k) }, modifier = Modifier.fillMaxWidth()) { Text(t) } } } }, confirmButton = {}, dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }) }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable fun WorkDialog(record: WorkRecord?, onDismiss: () -> Unit, onSave: (WorkRecord) -> Unit) { var date by remember(record?.id) { mutableStateOf(record?.date ?: dayText()) }; var start by remember(record?.id) { mutableStateOf(record?.startTime ?: "09:00") }; var end by remember(record?.id) { mutableStateOf(record?.endTime ?: "18:00") }; var br by remember(record?.id) { mutableStateOf(record?.breakHours?.let { fmt(it) } ?: "1") }; var rate by remember(record?.id) { mutableStateOf(record?.hourlyRate?.let { fmt(it) } ?: "20") }; var note by remember(record?.id) { mutableStateOf(record?.note ?: "") }; var error by remember { mutableStateOf<String?>(null) }; var picking by remember { mutableStateOf<String?>(null) }; FormDialog(if (record == null) "新增工时" else "编辑工时", error, onDismiss, { val breakHours = br.toDoubleOrNull(); val hourlyRate = rate.toDoubleOrNull(); error = when { !validDate(date) -> "日期格式错误，应为 yyyy-MM-dd"; !validTime(start) || !validTime(end) -> "请选择正确的上下班时间"; minutes(end) <= minutes(start) -> "下班时间必须晚于上班时间"; breakHours == null || breakHours < 0 -> "休息小时必须是非负数字"; hourlyRate == null || hourlyRate <= 0 -> "时薪必须大于 0"; else -> null }; if (error == null) onSave((record ?: WorkRecord()).copy(date = date, startTime = start, endTime = end, breakHours = breakHours!!, hourlyRate = hourlyRate!!, note = note)) }) { Field("日期 yyyy-MM-dd", date) { date = it }; TimeSelectField("上班时间", start) { picking = "start" }; TimeSelectField("下班时间", end) { picking = "end" }; Field("休息小时", br, true) { br = it }; Field("时薪", rate, true) { rate = it }; Field("备注", note) { note = it } }; picking?.let { target -> TimePickerDialog(title = if (target == "start") "选择上班时间" else "选择下班时间", initial = if (target == "start") start else end, onDismiss = { picking = null }, onConfirm = { value -> if (target == "start") start = value else end = value; picking = null }) } }
+@Composable fun TimeSelectField(label: String, value: String, onClick: () -> Unit) { OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column(horizontalAlignment = Alignment.Start) { Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }; Icon(Icons.Default.Schedule, contentDescription = null) } } }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable fun TimePickerDialog(title: String, initial: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) { val parts = initial.split(":"); val state = rememberTimePickerState(initialHour = parts.getOrNull(0)?.toIntOrNull() ?: 9, initialMinute = parts.getOrNull(1)?.toIntOrNull() ?: 0, is24Hour = true); AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { TimePicker(state = state) }, confirmButton = { FilledTonalButton(onClick = { onConfirm(String.format(Locale.CHINA, "%02d:%02d", state.hour, state.minute)) }) { Text("确定") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }) }
+@Composable fun AccountDialog(record: AccountRecord?, onDismiss: () -> Unit, onSave: (AccountRecord) -> Unit) { var type by remember(record?.id) { mutableStateOf(record?.type ?: TYPE_EXPENSE) }; var amount by remember(record?.id) { mutableStateOf(record?.amount?.takeIf { it > 0 }?.let { String.format(Locale.CHINA, "%.2f", it) } ?: "") }; var cat by remember(record?.id) { mutableStateOf(record?.category ?: "餐饮") }; var dateTime by remember(record?.id) { mutableStateOf(record?.dateTime ?: dateTimeText()) }; var note by remember(record?.id) { mutableStateOf(record?.note ?: "") }; var error by remember { mutableStateOf<String?>(null) }; FormDialog(if (record == null) "记一笔" else "编辑账目", error, onDismiss, { val money = amount.toDoubleOrNull(); error = when { money == null || money <= 0 -> "金额不能为空，且必须大于 0"; cat.isBlank() -> "分类不能为空"; !validDateTime(dateTime) -> "日期时间格式错误，应为 yyyy-MM-dd HH:mm"; else -> null }; if (error == null) onSave((record ?: AccountRecord()).copy(type = type, amount = money!!, category = cat.trim(), dateTime = dateTime, note = note)) }) { Row { FilterChip(selected = type == TYPE_EXPENSE, onClick = { type = TYPE_EXPENSE }, label = { Text("支出") }); Spacer(Modifier.width(8.dp)); FilterChip(selected = type == TYPE_INCOME, onClick = { type = TYPE_INCOME }, label = { Text("收入") }) }; Field("金额", amount, true) { amount = it }; Field("分类", cat) { cat = it }; Field("日期时间 yyyy-MM-dd HH:mm", dateTime) { dateTime = it }; Field("备注", note) { note = it } } }
+@Composable fun NoteDialog(record: NoteRecord?, onDismiss: () -> Unit, onSave: (NoteRecord) -> Unit) { var title by remember(record?.id) { mutableStateOf(record?.title ?: "") }; var content by remember(record?.id) { mutableStateOf(record?.content ?: "") }; var tags by remember(record?.id) { mutableStateOf(record?.tags ?: "") }; var pinned by remember(record?.id) { mutableStateOf(record?.pinned ?: false) }; var error by remember { mutableStateOf<String?>(null) }; FormDialog(if (record == null) "新建笔记" else "编辑笔记", error, onDismiss, { error = if (title.isBlank() && content.isBlank()) "标题和内容不能同时为空" else null; if (error == null) onSave((record ?: NoteRecord()).copy(title = title.trim(), content = content, tags = tags.trim(), pinned = pinned)) }) { Field("标题", title) { title = it }; Field("内容", content, minLines = 4) { content = it }; Field("标签", tags) { tags = it }; Row(verticalAlignment = Alignment.CenterVertically) { Switch(checked = pinned, onCheckedChange = { pinned = it }); Text("置顶") } } }
+@Composable fun TodoDialog(record: TodoRecord?, onDismiss: () -> Unit, onSave: (TodoRecord) -> Unit) { var title by remember(record?.id) { mutableStateOf(record?.title ?: "") }; var desc by remember(record?.id) { mutableStateOf(record?.description ?: "") }; var due by remember(record?.id) { mutableStateOf(record?.dueDate ?: dayText()) }; var pri by remember(record?.id) { mutableStateOf(record?.priority ?: "中") }; var error by remember { mutableStateOf<String?>(null) }; FormDialog(if (record == null) "新增待办" else "编辑待办", error, onDismiss, { error = when { title.isBlank() -> "待办标题不能为空"; !validDate(due) -> "截止日期格式错误，应为 yyyy-MM-dd"; pri !in listOf("高", "中", "低") -> "优先级只能填写：高 / 中 / 低"; else -> null }; if (error == null) onSave((record ?: TodoRecord()).copy(title = title.trim(), description = desc, dueDate = due, priority = pri)) }) { Field("标题", title) { title = it }; Field("描述", desc) { desc = it }; Field("截止日期 yyyy-MM-dd", due) { due = it }; Field("优先级 高/中/低", pri) { pri = it } } }
+
+@Composable fun ImportDialog(overwrite: Boolean, onOverwriteChange: (Boolean) -> Unit, onDismiss: () -> Unit, onPickFile: () -> Unit) { AlertDialog(onDismissRequest = onDismiss, title = { Text("导入备份") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("请选择之前导出的 JSON 备份文件。", color = MaterialTheme.colorScheme.onSurfaceVariant); Row(verticalAlignment = Alignment.CenterVertically) { Switch(checked = overwrite, onCheckedChange = onOverwriteChange); Text("覆盖现有数据") } } }, confirmButton = { FilledTonalButton(onClick = onPickFile) { Text("选择文件") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }) }
+@Composable fun FormDialog(title: String, error: String?, onDismiss: () -> Unit, onConfirm: () -> Unit, content: @Composable ColumnScope.() -> Unit) { AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { if (error != null) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium); content() } }, confirmButton = { FilledTonalButton(onClick = onConfirm) { Text("保存") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }) }
+@Composable fun Field(label: String, value: String, number: Boolean = false, minLines: Int = 1, onChange: (String) -> Unit) { OutlinedTextField(value = value, onValueChange = onChange, label = { Text(label) }, modifier = Modifier.fillMaxWidth(), minLines = minLines, keyboardOptions = KeyboardOptions(keyboardType = if (number) KeyboardType.Decimal else KeyboardType.Text), singleLine = minLines == 1) }
+fun fmt(v: Double) = String.format(Locale.CHINA, "%.1f", v)
+private fun validDate(text: String) = validByPattern(text, "yyyy-MM-dd")
+private fun validTime(text: String) = validByPattern(text, "HH:mm")
+private fun validDateTime(text: String) = validByPattern(text, "yyyy-MM-dd HH:mm")
+private fun validByPattern(text: String, pattern: String): Boolean = runCatching { SimpleDateFormat(pattern, Locale.CHINA).apply { isLenient = false }.parse(text); text.length == pattern.length }.getOrDefault(false)
+
+@Preview(showBackground = true)
+@Composable fun AppPreview() { MyApplicationTheme { EmptyCard("小账工时本", "本地记录工资、工时、记账、笔记和待办") } }

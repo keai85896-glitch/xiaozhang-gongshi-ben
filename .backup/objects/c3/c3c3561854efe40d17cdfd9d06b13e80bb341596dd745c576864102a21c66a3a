@@ -1,0 +1,26 @@
+from pathlib import Path
+p=Path('/data/user/0/com.ai.assistance.operit/files/workspace/b3f45e12-c3aa-438a-940d-2956d9b3337e/app/src/main/java/com/java/myapplication/MainActivity.kt')
+s=p.read_text()
+old='''val todayExpense = remember(accounts, today) { accounts.filter { it.dateTime.startsWith(today) && it.type == TYPE_EXPENSE }.sumOf { it.amount } }
+val totalBalance = totalIncome - totalExpense
+val salarySummary = remember(work, settings, adjustments, salaryPeriod) { calculateSalary(work, settings, adjustments, salaryPeriod) }
+LazyColumn(modifier.fillMaxSize(), state = rememberLazyListState(), contentPadding = screenPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+item(key = "home-hero") { HomeHeroCard(totalBalance, totalIncome, totalExpense, salarySummary.netSalary, todayWork.sumOf { it.hours }, todayWork.sumOf { it.wage }, todayExpense) }
+item(key = "home-stats") { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { HomeSmallCard("本周期工时", "${fmt(periodWork.sumOf { it.hours })}h", "实发 ${yuan(salarySummary.netSalary)}", Modifier.weight(1f)); HomeSmallCard("本月收支", yuan(monthIncome - monthExpense), "收 ${yuan(monthIncome)} · 支 ${yuan(monthExpense)}", Modifier.weight(1f)) } }
+'''
+new='''val todayExpense = remember(accounts, today) { accounts.filter { it.dateTime.startsWith(today) && it.type == TYPE_EXPENSE }.sumOf { it.amount } }
+val salarySummary = remember(work, settings, adjustments, salaryPeriod) { calculateSalary(work, settings, adjustments, salaryPeriod) }
+val combinedIncome = totalIncome + salarySummary.netSalary
+val combinedBalance = combinedIncome - totalExpense
+val combinedMonthIncome = monthIncome + salarySummary.netSalary
+val combinedMonthBalance = combinedMonthIncome - monthExpense
+LazyColumn(modifier.fillMaxSize(), state = rememberLazyListState(), contentPadding = screenPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+item(key = "home-hero") { HomeHeroCard(combinedBalance, combinedIncome, totalExpense, salarySummary.netSalary, todayWork.sumOf { it.hours }, todayWork.sumOf { it.wage }, todayExpense) }
+item(key = "home-stats") { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { HomeSmallCard("本周期工时", "${fmt(periodWork.sumOf { it.hours })}h", "实发 ${yuan(salarySummary.netSalary)}", Modifier.weight(1f)); HomeSmallCard("综合收支", yuan(combinedMonthBalance), "记账收 ${yuan(monthIncome)} + 工资 ${yuan(salarySummary.netSalary)} · 支 ${yuan(monthExpense)}", Modifier.weight(1f)) } }
+'''
+if old not in s:
+    raise SystemExit('target block not found')
+s=s.replace(old,new)
+s=s.replace('Text("今天概览", style = MaterialTheme.typography.titleMedium', 'Text("综合概览", style = MaterialTheme.typography.titleMedium')
+p.write_text(s)
+print('patched combine salary and account')

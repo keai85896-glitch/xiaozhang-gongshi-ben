@@ -1,0 +1,27 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Operit workspace / local scratch files
+.operit/
+patch_*.py
+fix_*.py
+revert_*.py
+setup_android_env.sh
+.kotlin/
+
+# Build outputs
+app/build/
+build/
