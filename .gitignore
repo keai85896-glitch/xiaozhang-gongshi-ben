@@ -25,3 +25,6 @@ setup_android_env.sh
 # Build outputs
 app/build/
 build/
+
+# Local conversation backups
+.backup/
